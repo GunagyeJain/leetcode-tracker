@@ -88,7 +88,7 @@ body {
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 28px 4px;
+  padding: 0 28px 64px;
 }
 
 /* ── HEADER ──────────────────────────────────────────────────────────── */
@@ -96,7 +96,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0 24px;
+  padding: 28px 0 24px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 32px;
   gap: 16px;
@@ -535,8 +535,9 @@ td:first-child { padding-left: 20px; color: var(--text3); font-size: 12.5px; fon
   position: relative;
   cursor: default;
 }
-.rdot.done { background: var(--easy); border-color: var(--easy); }
-.rdot.due  { background: var(--medium); border-color: var(--medium); }
+.rdot.done     { background: var(--easy);   border-color: var(--easy);   }  /* date is today or past */
+.rdot.upcoming { background: var(--accent); border-color: var(--accent); opacity: 0.6; } /* date is in future */
+.rdot.due      { background: var(--medium); border-color: var(--medium); } /* kept for safety */
 
 /* Notes */
 .td-notes { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); font-size: 12.5px; }
@@ -949,36 +950,28 @@ const col = {
   first:    r => r['Solved First Time?'] || r['solved first time?'],
   notes:    r => r['Notes']       || r['notes'],
   r1d:      r => r['R1 Date']     || r['r1 date'],
-  r1done:   r => r['R1 Done?']    || r['r1 done?'],
   r2d:      r => r['R2 Date']     || r['r2 date'],
-  r2done:   r => r['R2 Done?']    || r['r2 done?'],
   r3d:      r => r['R3 Date']     || r['r3 date'],
-  r3done:   r => r['R3 Done?']    || r['r3 done?'],
 };
 
 function isDue(r) {
-  const pairs = [[col.r1d(r), col.r1done(r)], [col.r2d(r), col.r2done(r)], [col.r3d(r), col.r3done(r)]];
-  return pairs.some(([d, done]) => {
+  // A revision is due if a date is set and that date is today or in the past
+  return [col.r1d(r), col.r2d(r), col.r3d(r)].some(d => {
     if (!d) return false;
     const dt = new Date(d); dt.setHours(0,0,0,0);
-    return !isNaN(dt) && dt <= TODAY && done?.toLowerCase() !== 'y';
+    return !isNaN(dt) && dt <= TODAY;
   });
 }
 
 function revDots(r) {
-  const pairs = [
-    [col.r1d(r), col.r1done(r)],
-    [col.r2d(r), col.r2done(r)],
-    [col.r3d(r), col.r3done(r)],
-  ];
-  return pairs.map(([d, done], i) => {
-    if (!d) return `<div class="rdot" title="R${i+1}: not scheduled"></div>`;
+  // Dot states: filled green = date set and due/past, filled amber = date set but future, empty = no date
+  return [col.r1d(r), col.r2d(r), col.r3d(r)].map((d, i) => {
+    if (!d || !d.trim()) return `<div class="rdot" title="R${i+1}: not scheduled"></div>`;
     const dt = new Date(d); dt.setHours(0,0,0,0);
-    const isDone = done?.toLowerCase() === 'y';
     const isPast = !isNaN(dt) && dt <= TODAY;
-    const cls = isDone ? 'done' : isPast ? 'due' : '';
-    const label = isDone ? 'Done' : isPast ? 'Overdue' : 'Scheduled';
-    return `<div class="rdot ${cls}" title="R${i+1}: ${d} &mdash; ${label}"></div>`;
+    const cls = isPast ? 'done' : 'upcoming';
+    const label = isPast ? 'Due / done' : 'Upcoming';
+    return `<div class="rdot ${cls}" title="R${i+1}: ${d} — ${label}"></div>`;
   }).join('');
 }
 
