@@ -378,7 +378,84 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-.table-scroll { overflow-x: auto; }
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* Fixed 6-row scrollable body — applied together with .table-scroll */
+.table-body-wrap {
+  overflow-y: auto;
+  max-height: calc(6 * 49px);
+  overflow-x: auto;
+}
+.table-body-wrap::-webkit-scrollbar { width: 5px; }
+.table-body-wrap::-webkit-scrollbar-track { background: transparent; }
+.table-body-wrap::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 99px; }
+
+/* Fullscreen overlay */
+.table-fullscreen-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  flex-direction: column;
+  padding: 20px 28px 24px;
+  animation: fsIn 0.2s ease;
+}
+@keyframes fsIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.table-fullscreen-overlay.open { display: flex; }
+
+.fs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+.fs-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+.fs-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.fs-table-container {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.fs-table-scroll {
+  overflow: auto;
+  flex: 1;
+}
+.fs-table-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.fs-table-scroll::-webkit-scrollbar-track { background: transparent; }
+.fs-table-scroll::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 99px; }
+.fs-table-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface2);
+  font-size: 12px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
 
 table {
   width: 100%;
@@ -400,6 +477,9 @@ thead th {
   letter-spacing: 0.07em;
   white-space: nowrap;
   background: var(--surface2);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 thead th:first-child { border-radius: 0; padding-left: 20px; }
@@ -649,9 +729,41 @@ td:first-child { padding-left: 20px; color: var(--text3); font-size: 12.5px; fon
     </div>
   </div>
 
+  <!-- FULLSCREEN OVERLAY -->
+  <div class="table-fullscreen-overlay" id="fs-overlay">
+    <div class="fs-header">
+      <span class="fs-title">All Problems</span>
+      <div class="fs-filter-row" id="fs-filter-row">
+        <!-- cloned filters injected by JS -->
+      </div>
+      <button class="btn" onclick="closeFullscreen()" style="flex-shrink:0">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
+        Exit Fullscreen
+      </button>
+    </div>
+    <div class="fs-table-container">
+      <div class="fs-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Date</th><th>Problem</th><th>Difficulty</th>
+              <th>Topic</th><th>Platform</th><th>1st Try</th>
+              <th>Revisions</th><th>Notes</th><th>Link</th>
+            </tr>
+          </thead>
+          <tbody id="fs-table-body"></tbody>
+        </table>
+      </div>
+      <div class="fs-table-footer">
+        <span id="fs-row-count">0 problems</span>
+        <span id="fs-footer-filter"></span>
+      </div>
+    </div>
+  </div>
+
   <!-- TABLE -->
   <div class="table-container">
-    <div class="table-scroll">
+    <div class="table-scroll table-body-wrap">
       <table>
         <thead>
           <tr>
@@ -681,6 +793,10 @@ td:first-child { padding-left: 20px; color: var(--text3); font-size: 12.5px; fon
     <div class="table-footer">
       <span id="row-count">0 problems</span>
       <span id="footer-filter"></span>
+      <button class="btn" onclick="openFullscreen()" style="margin-left:auto; padding:5px 12px; font-size:12px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        Fullscreen
+      </button>
     </div>
   </div>
 
@@ -981,9 +1097,44 @@ function renderTable() {
     </tr>`;
   }).join('');
 
-  set('row-count', rows.length + ' problem' + (rows.length !== 1 ? 's' : ''));
-  set('footer-filter', activeFilter !== 'all' ? 'Filtered: ' + activeFilter : '');
+  const countText = rows.length + ' problem' + (rows.length !== 1 ? 's' : '');
+  const filterText = activeFilter !== 'all' ? 'Filtered: ' + activeFilter : '';
+  set('row-count', countText);
+  set('footer-filter', filterText);
+
+  // Keep fullscreen table in sync if open
+  const fsBody = document.getElementById('fs-table-body');
+  if (fsBody) fsBody.innerHTML = tbody.innerHTML;
+  set('fs-row-count', countText);
+  set('fs-footer-filter', filterText);
 }
+
+// ── FULLSCREEN ──────────────────────────────────────────────────────────────
+function openFullscreen() {
+  const overlay = document.getElementById('fs-overlay');
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  // Sync table content
+  const fsBody = document.getElementById('fs-table-body');
+  const mainBody = document.getElementById('table-body');
+  if (fsBody && mainBody) fsBody.innerHTML = mainBody.innerHTML;
+
+  const countText = document.getElementById('row-count').textContent;
+  const filterText = document.getElementById('footer-filter').textContent;
+  set('fs-row-count', countText);
+  set('fs-footer-filter', filterText);
+}
+
+function closeFullscreen() {
+  document.getElementById('fs-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// Close on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeFullscreen();
+});
 </script>
 </body>
 </html>
