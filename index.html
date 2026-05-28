@@ -690,6 +690,14 @@ td:first-child { padding-left: 20px; color: var(--text3); font-size: 12.5px; fon
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRPMMRww_HAvMIN0A3aPbBMUnBgmW8igPQ86qMLjoCgHfPF-WUujLCs6kNGcpSfxHm_cO3O4rBW7P9T/pub?gid=0&single=true&output=csv";
 
+// Proxies bypass Google's aggressive CDN cache so updates appear immediately.
+// We try each in order until one succeeds.
+const PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&t=${Date.now()}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}&t=${Date.now()}`,
+  url => url + `&nocache=${Date.now()}`, // direct fallback
+];
+
 let allData = [];
 let activeFilter = 'all';
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
@@ -741,22 +749,42 @@ function setStatus(state, msg, time) {
   }
 }
 
+async function fetchWithProxy(proxyFn) {
+  const res = await fetch(proxyFn(CSV_URL), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (!text || text.trim().length < 10) throw new Error('Empty response');
+  // Reject HTML error pages returned by some proxies
+  if (text.trim().startsWith('<')) throw new Error('Got HTML instead of CSV');
+  return text;
+}
+
 async function refreshData() {
   setStatus('loading', 'Fetching your Google Sheet...');
-  try {
-    const res = await fetch(CSV_URL + '&_=' + Date.now());
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const csv = await res.text();
-    if (!csv || csv.trim().length < 10) throw new Error('Empty response');
-    allData = parseCSV(csv);
-    const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    setStatus('success', `Loaded ${allData.length} problems successfully`, 'Updated at ' + now);
-    updateStats();
-    renderTable();
-  } catch (e) {
-    setStatus('error', 'Could not load sheet. Check your sheet is published as CSV.', '');
-    console.error(e);
+  let csv = null;
+  let lastErr = null;
+
+  for (const proxy of PROXIES) {
+    try {
+      csv = await fetchWithProxy(proxy);
+      break; // success — stop trying
+    } catch (e) {
+      lastErr = e;
+      console.warn('Proxy failed, trying next...', e.message);
+    }
   }
+
+  if (!csv) {
+    setStatus('error', 'Could not load sheet — check it is published as CSV.', '');
+    console.error('All proxies failed:', lastErr);
+    return;
+  }
+
+  allData = parseCSV(csv);
+  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  setStatus('success', `Loaded ${allData.length} problems successfully`, 'Updated at ' + now);
+  updateStats();
+  renderTable();
 }
 
 // Auto-refresh on load, then every 5 minutes
