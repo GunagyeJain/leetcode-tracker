@@ -1072,7 +1072,10 @@ function renderTable() {
          </a>`
       : '<span style="color:var(--text3);font-size:12px">—</span>';
 
-    const topic = col.topic(r) ? `<span class="badge badge-tag">${col.topic(r)}</span>` : '—';
+    const topicRaw = col.topic(r) || '';
+    const topic = topicRaw
+      ? topicRaw.split(',').map(t => `<span class="badge badge-tag">${t.trim()}</span>`).join(' ')
+      : '—';
     const platform = col.platform(r) ? `<span class="badge badge-platform">${col.platform(r)}</span>` : '—';
     const notes = col.notes(r) || '';
 
